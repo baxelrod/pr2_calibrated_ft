@@ -84,9 +84,9 @@ find_package(catkin REQUIRED COMPONENTS
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-#  INCLUDE_DIRS include
+  INCLUDE_DIRS include
 #  LIBRARIES pr2_calibrated_ft
-#  CATKIN_DEPENDS control_msgs geometry_msgs roscpp rospy sensor_msgs tf trajectory_msgs
+  CATKIN_DEPENDS control_msgs geometry_msgs roscpp rospy sensor_msgs tf trajectory_msgs
 #  DEPENDS system_lib
 )
 
@@ -99,7 +99,10 @@ catkin_package(
 # include_directories(include)
 include_directories(
   ${catkin_INCLUDE_DIRS}
+  include
 )
+
+#MESSAGE (FATAL_ERROR ${catkin_INCLUDE_DIRS})
 
 ## Declare a cpp library
 # add_library(pr2_calibrated_ft
@@ -107,16 +110,16 @@ include_directories(
 # )
 
 ## Declare a cpp executable
-# add_executable(pr2_calibrated_ft_node src/pr2_calibrated_ft_node.cpp)
+add_executable(ft_calibrated src/ft_calibrated.cpp)
 
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes
 # add_dependencies(pr2_calibrated_ft_node pr2_calibrated_ft_generate_messages_cpp)
 
 ## Specify libraries to link a library or executable target against
-# target_link_libraries(pr2_calibrated_ft_node
-#   ${catkin_LIBRARIES}
-# )
+target_link_libraries(ft_calibrated
+  ${catkin_LIBRARIES}
+)
 
 #############
 ## Install ##
