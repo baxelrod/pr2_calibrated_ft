@@ -91,7 +91,7 @@ class Joint_FT_Log():
         l.stop()
         l.block_until_done()
         sleep(1) # make sure we can interpolate joint data
-        jl.stop()
+        jl.stop_after(l.time[l.idx-1]) #keep logging until we've logged joint data past the last force-torque measurement
         jl.block_until_done()
         
         #truncate timeseries
@@ -103,17 +103,27 @@ class Joint_FT_Log():
         offset = min(l.time[0],jl.time[0])
         l.time = l.time - offset
         jl.time = jl.time - offset
-        
-        if not jl.time[0] < l.time[0]:
-            print 'joint logger started late:', jl.time[0] - l.time[0],
-        if not jl.time[-1] > l.time[-1]:
-            print 'joint logger ended early:' , l.time[-1] - jl.time[-1],
 
         self.joint_logger = jl
         self.ft_logger = l
 
-        #joints are published separetly from ft sensor. interpolate joint values at the times of the ft messages
-
+        
+        #the interpolator below will generate an exception if there is an attempt to extrapolate.
+        
+        if not jl.time[0] < l.time[0]:
+            print 'joint logger started late:', jl.time[0] - l.time[0],
+            return
+        if not jl.time[-1] > l.time[-1]:
+            print 'joint logger ended early:' , l.time[-1] - jl.time[-1],
+            return
+            
+        self.time_aligned = False
+        
+    def time_align(self):
+        #joints are published separatly from ft sensor. interpolate joint values at the times of the ft messages
+        #we do this not immediately after collecting the data because the interpolator throws an exception
+        #if there if we ask for extrapolation  (good), but we want to at least save the data beforehand.
+        
         self.joint_interpolator = {}
         self.pos = np.zeros((len(self.ft_logger.time), len(self.joint_logger.joints)),dtype=np.float64)
 
@@ -121,7 +131,9 @@ class Joint_FT_Log():
             interpolator = scipy.interpolate.interp1d(self.joint_logger.time,self.joint_logger.pos[:,i]) 
             self.pos[:,i] = interpolator(self.ft_logger.time)
             self.joint_interpolator[joint] = interpolator            
-    
+        
+        self.time_aligned = True
+        
     def get(self,name):
         ft_names = ['fx','fy','fz','tx','ty','tz']
         joint_names = self.internal_joint_names
@@ -129,6 +141,9 @@ class Joint_FT_Log():
         if name in ft_names:
             return self.ft_logger.ft[:,  ft_names.index(name)]
         elif name in joint_names:
+            if not self.time_aligned:
+                self.time_align()
+                
             return self.pos[:,  joint_names.index(name)]
         else:
             raise ValueError('Unknown name: %s'%(name))

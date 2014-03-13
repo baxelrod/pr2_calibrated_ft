@@ -23,7 +23,9 @@ class TopicLogger:
         self._send_stop = False
         
         self.last_message = None
-        
+        self.stop_time = None
+        self.stop_time_lock = threading.Lock() #arbitrate access to last_message
+
         self.subscriber = rospy.Subscriber(topic_name, message_type, self.handler, buff_size=subscribe_buffer_length)
         
         self.done_lock = threading.Lock() #this lock remains acquired until logging is done
@@ -32,6 +34,8 @@ class TopicLogger:
         self.start_lock.acquire()
         self.first_run = True              #gets set to False the first time the handler is run
         
+        self.stopped_reason = "not stopped"
+
     def block_until_done(self):
         self.done_lock.acquire()
         self.done_lock.release()
@@ -39,7 +43,12 @@ class TopicLogger:
     def block_until_start(self):
         self.start_lock.acquire()
         self.start_lock.release()
-        
+
+    def stop_after(self,nsec):
+        self.stop_time_lock.acquire()
+        self.stop_time = nsec
+        self.stop_time_lock.release()
+
     def stop(self):
         self._send_stop = True #is this threadsafe?
         
@@ -49,20 +58,36 @@ class TopicLogger:
             if self.unregister_on_finish:
                 raise AssertionError("handler got called, but should have been unsubscribed from topic")
             return
-            
-        if self.idx == self.log_length or self._send_stop:
-            #this block runs exactly once
-            self.done = True
-            if self.unregister_on_finish:
-                self.subscriber.unregister()
-            self.done_lock.release()
-            return
 
         self.last_message = message
         self.time[self.idx] = message.header.stamp.to_nsec()
         self.handler_specific(message)
         self.idx += 1
         
+        self.stop_time_lock.acquire()
+        stop_time = self.stop_time
+        self.stop_time_lock.release()
+
+        is_past_stop_time = (stop_time is not None and stop_time < message.header.stamp.to_nsec())
+        
+
+        if self.idx == self.log_length or self._send_stop or is_past_stop_time:
+            #this block runs exactly once
+            self.done = True
+            if self.unregister_on_finish:
+                self.subscriber.unregister()
+            self.done_lock.release()
+
+            if self.idx == self.log_length:
+                self.stopped_reason = "Log Filled"
+            elif self._send_stop:
+                self.stopped_reason = "Got Stop Signal"
+            elif is_past_stop_time:
+                self.stopped_reason = "Past Stop Time"
+
+                
+            return
+
         if self.first_run:
             self.start_lock.release()
             self.first_run = False
