@@ -20,7 +20,6 @@ class TopicLogger:
         
         self.done = False
         self.unregister_on_finish = True
-        self._send_stop = False
         
         self.last_message = None
         self.stop_time = None
@@ -28,21 +27,21 @@ class TopicLogger:
 
         self.subscriber = rospy.Subscriber(topic_name, message_type, self.handler, buff_size=subscribe_buffer_length)
         
-        self.done_lock = threading.Lock() #this lock remains acquired until logging is done
-        self.done_lock.acquire()
-        self.start_lock = threading.Lock() #this lock remains acquired until logging is started
-        self.start_lock.acquire()
+        self.done_event = threading.Event() #this event remains cleared until logging is done
+        self.start_event = threading.Event() #this lock remains cleared until logging is started
+        self.request_stop_event = threading.Event()
+
         self.first_run = True              #gets set to False the first time the handler is run
         
         self.stopped_reason = "not stopped"
 
     def block_until_done(self):
-        self.done_lock.acquire()
-        self.done_lock.release()
+        while not rospy.is_shutdown() and not self.done_event.is_set():
+            self.done_event.wait(0.5)
 
     def block_until_start(self):
-        self.start_lock.acquire()
-        self.start_lock.release()
+        while not rospy.is_shutdown() and not self.start_event.is_set():
+            self.start_event.wait(0.5)
 
     def stop_after(self,nsec):
         self.stop_time_lock.acquire()
@@ -50,7 +49,7 @@ class TopicLogger:
         self.stop_time_lock.release()
 
     def stop(self):
-        self._send_stop = True #is this threadsafe?
+        self.request_stop_event.set()
         
     def handler(self,message):
         #this handler logs time, manages unsubscribing, manipulates self.idx and calls another handler that may do other things in subclassed version
@@ -70,26 +69,25 @@ class TopicLogger:
 
         is_past_stop_time = (stop_time is not None and stop_time < message.header.stamp.to_nsec())
         
-
-        if self.idx == self.log_length or self._send_stop or is_past_stop_time:
+        if self.idx == self.log_length or self.request_stop_event.is_set() or is_past_stop_time or rospy.is_shutdown():
             #this block runs exactly once
             self.done = True
             if self.unregister_on_finish:
                 self.subscriber.unregister()
-            self.done_lock.release()
-
+            self.done_event.set()
+            
             if self.idx == self.log_length:
                 self.stopped_reason = "Log Filled"
-            elif self._send_stop:
+            elif self.request_stop_event.is_set():
                 self.stopped_reason = "Got Stop Signal"
             elif is_past_stop_time:
                 self.stopped_reason = "Past Stop Time"
-
-                
+            elif rospy_is_shutdown():
+                self.stopped_reason = "rospy sent shutdown"                
             return
 
         if self.first_run:
-            self.start_lock.release()
+            self.start_event.set()
             self.first_run = False
                   
     def handler_specific(self,message):

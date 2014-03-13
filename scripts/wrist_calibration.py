@@ -65,6 +65,8 @@ class Joint_FT_Log():
         #start the joint and force torque sensor loggers, call "move", then stop the loggers
         #then do the proper time interpolation to align the joint and ft data
 
+        self.time_aligned = False
+        
         rospy.loginfo('start logging')
         jl = Joint_Logger(6000, [  'r_shoulder_pan_joint', 
                                     'r_shoulder_lift_joint', 
@@ -117,7 +119,7 @@ class Joint_FT_Log():
             print 'joint logger ended early:' , l.time[-1] - jl.time[-1],
             return
             
-        self.time_aligned = False
+
         
     def time_align(self):
         #joints are published separatly from ft sensor. interpolate joint values at the times of the ft messages
